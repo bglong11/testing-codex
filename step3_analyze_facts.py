@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 import dspy
 from dotenv import load_dotenv
+from llm_config import get_model_for_provider, resolve_provider_for_step
 
 # Configure UTF-8 output for Windows console
 if sys.stdout.encoding != 'utf-8':
@@ -160,7 +161,7 @@ def configure_dspy(provider: str):
     print(f"  → Preparing DSPy for provider: {provider.upper()}")
 
     if provider == "ollama":
-        model = os.getenv("OLLAMA_MODEL", "mistral:latest")
+        model = get_model_for_provider(provider)
         base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.1"))
         max_tokens = int(os.getenv("OLLAMA_MAX_TOKENS", "4096"))
@@ -179,7 +180,7 @@ def configure_dspy(provider: str):
         if not api_key:
             raise ValueError("OPENAI_API_KEY is not set in the environment.")
 
-        model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+        model = get_model_for_provider(provider)
         temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.1"))
         max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "4096"))
 
@@ -196,7 +197,7 @@ def configure_dspy(provider: str):
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY is not set in the environment.")
 
-        model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
+        model = get_model_for_provider(provider)
         temperature = float(os.getenv("ANTHROPIC_TEMPERATURE", "0.1"))
         max_tokens = int(os.getenv("ANTHROPIC_MAX_TOKENS", "4096"))
 
@@ -213,7 +214,7 @@ def configure_dspy(provider: str):
         if not api_key:
             raise ValueError("GEMINI_API_KEY is not set in the environment.")
 
-        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        model = get_model_for_provider(provider)
         temperature = float(os.getenv("GEMINI_TEMPERATURE", "0.1"))
         max_tokens = int(os.getenv("GEMINI_MAX_TOKENS", "4096"))
 
@@ -241,7 +242,12 @@ def main():
     provider_override = args.provider
 
     load_dotenv()
-    llm_provider = (provider_override or os.getenv("LLM_PROVIDER", "openai")).lower()
+
+    try:
+        llm_provider = resolve_provider_for_step("step3", provider_override)
+    except ValueError as exc:
+        print(f"  ✗ {exc}")
+        return
 
     try:
         configure_dspy(llm_provider)

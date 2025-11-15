@@ -21,6 +21,7 @@ import argparse
 from pathlib import Path
 from datetime import datetime
 from dotenv import load_dotenv
+from llm_config import ensure_provider_credentials, get_model_for_provider, resolve_provider_for_step
 
 # Configure UTF-8 output for Windows console
 if sys.stdout.encoding != 'utf-8':
@@ -82,35 +83,6 @@ Examples:
     return args.markdown_path, args.output_dir, args.provider
 
 
-def set_llm_provider(provider):
-    """Set LLM provider in environment variables."""
-    if not provider:
-        return  # Use default from .env
-
-    valid_providers = ["openai", "ollama", "anthropic", "gemini"]
-    if provider not in valid_providers:
-        print_error(f"Invalid provider: {provider}")
-        print_info(f"Supported providers: {', '.join(valid_providers)}")
-        return False
-
-    # Set provider in environment
-    os.environ["LLM_PROVIDER"] = provider
-
-    # Set default model if not already set
-    if provider == "openai" and not os.getenv("OPENAI_API_KEY"):
-        print_error("OpenAI provider selected but OPENAI_API_KEY not set in .env")
-        return False
-    elif provider == "ollama" and not os.getenv("OLLAMA_BASE_URL"):
-        os.environ["OLLAMA_BASE_URL"] = "http://localhost:11434"
-    elif provider == "anthropic" and not os.getenv("ANTHROPIC_API_KEY"):
-        print_error("Anthropic provider selected but ANTHROPIC_API_KEY not set in .env")
-        return False
-    elif provider == "gemini" and not os.getenv("GEMINI_API_KEY"):
-        print_error("Gemini provider selected but GEMINI_API_KEY not set in .env")
-        return False
-
-    return True
-
 
 def main():
     """Run fact extraction and factsheet generation."""
@@ -124,11 +96,20 @@ def main():
     # Parse command-line arguments
     markdown_path, output_dir, provider = parse_arguments()
 
-    # Set LLM provider if specified
+    try:
+        llm_provider = resolve_provider_for_step("step2", provider)
+    except ValueError as exc:
+        print_error(str(exc))
+        return False
+
+    try:
+        ensure_provider_credentials(llm_provider)
+    except ValueError as exc:
+        print_error(str(exc))
+        return False
+
     if provider:
-        if not set_llm_provider(provider):
-            return False
-        print_success(f"LLM Provider override: {provider.upper()}")
+        print_success(f"LLM Provider override for Step 2: {llm_provider.upper()}")
 
     # Check if markdown file exists
     if not markdown_path.exists():
@@ -157,16 +138,7 @@ def main():
 
     print_step(2, "EXTRACTING FACTS & GENERATING FACTSHEET")
 
-    # Check which LLM provider is configured
-    llm_provider = os.getenv("LLM_PROVIDER", "openai").lower()
-    llm_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    if llm_provider == "ollama":
-        llm_model = os.getenv("OLLAMA_MODEL", "mistral:latest")
-    elif llm_provider == "anthropic":
-        llm_model = os.getenv("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
-    elif llm_provider == "gemini":
-        llm_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-
+    llm_model = get_model_for_provider(llm_provider)
     print_info(f"LLM Provider: {llm_provider.upper()} ({llm_model})")
     print_info(f"Input Markdown: {markdown_path}")
     print_info(f"Output Directory: {output_dir}")
@@ -175,6 +147,9 @@ def main():
     try:
         # Prepare environment for subprocess with LLM provider settings
         env = os.environ.copy()
+        env["LLM_PROVIDER"] = llm_provider
+        if llm_provider == "ollama":
+            env.setdefault("OLLAMA_BASE_URL", "http://localhost:11434")
 
         # Run esia_extractor.py as subprocess
         result = subprocess.run(

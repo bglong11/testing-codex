@@ -7,14 +7,17 @@ Converts PDF documents to markdown format and saves to markdown_outputs/ directo
 Usage:
     python step1_pdf_to_markdown.py <input.pdf>
     python step1_pdf_to_markdown.py saas/backend/your_test.pdf
+    python step1_pdf_to_markdown.py input.pdf --provider openai
 """
 
 import sys
 import io
 import os
+import argparse
 from pathlib import Path
 from datetime import datetime
 from tqdm import tqdm
+from llm_config import SUPPORTED_PROVIDERS, resolve_provider_for_step
 
 # Configure UTF-8 output for Windows console
 if sys.stdout.encoding != 'utf-8':
@@ -47,6 +50,24 @@ def print_error(msg):
 def print_info(msg):
     """Print info message."""
     print(f"  → {msg}")
+
+
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description="Convert a PDF to markdown outputs for the ESIA pipeline.",
+        formatter_class=argparse.RawTextHelpFormatter,
+    )
+
+    parser.add_argument("pdf_path", type=Path, help="Path to the PDF that needs conversion.")
+    parser.add_argument(
+        "--provider",
+        type=str,
+        choices=list(SUPPORTED_PROVIDERS),
+        help="Optional LLM provider label for this step (default is read from LLM_PROVIDER or ollama).",
+    )
+
+    return parser.parse_args()
 
 
 def convert_pdf_to_markdown(pdf_path: Path, markdown_dir: Path | str = Path("markdown_outputs")) -> tuple[Path, str]:
@@ -90,13 +111,17 @@ def main():
     print_header("STEP 1: PDF TO MARKDOWN CONVERSION (Docling)")
     print(f"Start Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
 
-    # Validate arguments
-    if len(sys.argv) < 2:
-        print_error("Missing PDF file path")
-        print(f"\nUsage: python {sys.argv[0]} <input.pdf>\n")
+    args = parse_arguments()
+    pdf_path = args.pdf_path
+    provider_override = args.provider
+
+    try:
+        llm_provider = resolve_provider_for_step("step1", provider_override)
+    except ValueError as exc:
+        print_error(str(exc))
         return False
 
-    pdf_path = Path(sys.argv[1])
+    print_info(f"LLM Provider for Step 1 pipeline metadata: {llm_provider.upper()}")
 
     # Check if PDF exists
     if not pdf_path.exists():
