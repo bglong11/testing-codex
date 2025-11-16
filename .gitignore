@@ -1,2 +1,22 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments and secrets
 .venv/
+venv/
+env/
+ENV/
 .env
+
+# IDE/editor cruft
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Pipeline outputs and reports
+output/
+markdown_outputs/
+pipeline_runs/
