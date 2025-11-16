@@ -11,16 +11,19 @@ Usage:
 
 Example:
     python step3_analyze_facts.py ./pipeline_test_openai
+    python step3_analyze_facts.py ./pipeline_runs/your_project --pipeline-root
 """
 
 import argparse
 import io
 import json
 import os
+import re
 import sys
 import textwrap
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import dspy
@@ -38,6 +41,57 @@ def print_header(title):
 
 def print_step(step_num, title):
     print(f"\n[{step_num}] {title}\n{'-' * 80}")
+
+
+def print_info(msg):
+    """Print info message."""
+    print(f"  → {msg}")
+
+
+PDF_STEM_MATCH = re.compile(r"(?P<pdf_name>.+)_(?P<timestamp>\d{8}_\d{6})$")
+
+
+def load_pipeline_metadata(input_dir: Path) -> dict[str, Any]:
+    """Read metadata created by Step 2 to reuse context such as the source PDF name."""
+    metadata_path = input_dir / "pipeline_metadata.json"
+    if not metadata_path.exists():
+        return {}
+
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as metadata_file:
+            data = json.load(metadata_file)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def infer_pdf_name_from_markdown(markdown_path: str) -> str:
+    """Recover the PDF stem from a markdown filename when possible."""
+    stem = Path(markdown_path).stem
+    match = PDF_STEM_MATCH.match(stem)
+    if match:
+        return match.group("pdf_name")
+    return stem
+
+
+def infer_pdf_name_from_metadata(metadata: dict[str, Any]) -> str | None:
+    """Use metadata fields to determine the original PDF name."""
+    pdf_name = metadata.get("source_pdf_name")
+    if isinstance(pdf_name, str) and pdf_name.strip():
+        return pdf_name.strip()
+    markdown_source = metadata.get("source_markdown")
+    if isinstance(markdown_source, str) and markdown_source:
+        return infer_pdf_name_from_markdown(markdown_source)
+    return None
+
+
+def sanitize_pdf_name(raw_name: str) -> str:
+    """Remove characters that are unsuitable for filenames."""
+    sanitized = re.sub(r"[^\w\-]+", "_", raw_name.strip())
+    sanitized = re.sub(r"_+", "_", sanitized).strip("_")
+    return sanitized or "document"
 
 
 class CategorizeAndConsolidateFacts(dspy.Signature):
@@ -111,6 +165,11 @@ Examples:
         "--dump-raw",
         action="store_true",
         help="Write the raw fact input sent to DSPy to <input_dir>/dspy_input.txt"
+    )
+    parser.add_argument(
+        "--pipeline-root",
+        type=Path,
+        help="Path to the pipeline run directory so Step 3 can consume pipeline_root/step2_output."
     )
 
     return parser.parse_args()
@@ -240,8 +299,18 @@ def main():
     args = parse_arguments()
     input_dir = args.input_dir
     provider_override = args.provider
+    pipeline_root = args.pipeline_root
 
-    load_dotenv()
+    if pipeline_root:
+        pipeline_root = pipeline_root.resolve()
+        step2_dir = pipeline_root / "step2_output"
+        if not step2_dir.exists():
+            print(f"  ✗ Step 2 output not found at {step2_dir}")
+            return
+        input_dir = step2_dir
+        print_info(f"Using pipeline root for Step 3: {pipeline_root}")
+
+    load_dotenv(override=True)
 
     try:
         llm_provider = resolve_provider_for_step("step3", provider_override)
@@ -316,7 +385,12 @@ def main():
         print("  ⚠️ DSPy did not produce a consolidated factsheet; using fallback text.")
 
     print_step(3, "GENERATING VERIFICATION REPORT")
-    report_path = input_dir / "verification_report.md"
+    metadata = load_pipeline_metadata(input_dir)
+    pdf_name_candidate = infer_pdf_name_from_metadata(metadata) or input_dir.name
+    safe_pdf_name = sanitize_pdf_name(pdf_name_candidate)
+    report_datetime = datetime.now().strftime("%Y%m%d_%H%M%S")
+    report_filename = f"{safe_pdf_name}_{report_datetime}_verification_report.md"
+    report_path = input_dir / report_filename
 
     try:
         with open(report_path, "w", encoding="utf-8") as f:

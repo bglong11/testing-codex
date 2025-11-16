@@ -15,11 +15,11 @@ Examples:
     python test_llm_configuration.py --verbose          # Detailed output
 """
 
+
 import sys
 import io
 import os
 import time
-import json
 import traceback
 from pathlib import Path
 from typing import Dict, List, Tuple, Optional
@@ -30,18 +30,89 @@ if sys.stdout.encoding != 'utf-8':
 
 import dspy
 
-# Load environment variables from .env file
-from pathlib import Path
-try:
-    from dotenv import load_dotenv
-    env_file = Path(".env")
-    if env_file.exists():
-        # Use override=True to ensure .env values replace any existing environment variables
-        # This prevents old API keys in system environment from shadowing .env values
-        load_dotenv(env_file, override=True)
-except ImportError:
-    pass
+# Determine repository root and .env path
+SCRIPT_DIR = Path(__file__).resolve().parent
+DOTENV_PATH = SCRIPT_DIR / ".env"
+DOTENV_VALUES: Dict[str, str] = {}
 
+def _strip_quotes(value: str) -> str:
+    """Remove surrounding quotes from a dotenv value."""
+    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+        return value[1:-1]
+    return value
+
+def parse_dotenv_file(path: Path) -> Dict[str, str]:
+    """Parse a dotenv file into a dict without relying on external dependencies."""
+    entries: Dict[str, str] = {}
+    if not path.exists():
+        return entries
+
+    for raw_line in path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        value = raw_value.strip()
+
+        # Strip inline comments (only outside quotes)
+        if "#" in value and not (value.startswith('"') or value.startswith("'")):
+            value = value.split("#", 1)[0].strip()
+
+        value = _strip_quotes(value)
+        entries[key] = value
+
+    return entries
+
+def load_dotenv_entries(path: Path) -> Dict[str, str]:
+    """Load dotenv entries into the environment, falling back when python-dotenv is unavailable."""
+    parsed = parse_dotenv_file(path)
+    if not parsed:
+        return parsed
+
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(path, override=True)
+    except ImportError:
+        for key, value in parsed.items():
+            os.environ[key] = value
+    else:
+        for key, value in parsed.items():
+            os.environ[key] = value
+
+    return parsed
+
+# Populate environment from .env file
+DOTENV_VALUES = load_dotenv_entries(DOTENV_PATH)
+
+API_KEY_PREFIXES = {
+    "OPENAI_API_KEY": "sk-",
+    "ANTHROPIC_API_KEY": "sk-",
+    "GEMINI_API_KEY": "AIza"
+}
+
+def compare_with_dotenv(key: str, current_value: str, label: str):
+    """Log when the resolved value differs from the .env definition."""
+    expected = DOTENV_VALUES.get(key)
+    if expected and expected != current_value:
+        print(f"    ⚠ {label} from .env ({expected}) differs from resolved value ({current_value})")
+
+def validate_api_key_format(env_key: str):
+    """Ensure API key matches the expected prefix and formatting."""
+    api_key = os.getenv(env_key)
+    if not api_key:
+        return
+
+    prefix = API_KEY_PREFIXES.get(env_key)
+    if prefix and not api_key.startswith(prefix):
+        raise ValueError(
+            f"{env_key} appears malformed; expected prefix '{prefix}', got '{api_key[:8]}...'."
+        )
+
+    if " " in api_key:
+        raise ValueError(f"{env_key} should not contain spaces.")
 # ============================================================================
 # Utility Functions
 # ============================================================================
@@ -222,6 +293,7 @@ def test_openai_config(verbose: bool = False) -> Dict:
         print(f"    Model: {model}")
         print(f"    Temperature: {temperature}")
         print(f"    Max Tokens: {max_tokens}")
+        compare_with_dotenv("OPENAI_MODEL", model, "Model")
 
         # Validate API key
         print(f"\n  Validating API Key...")
@@ -229,6 +301,7 @@ def test_openai_config(verbose: bool = False) -> Dict:
             raise ValueError("OPENAI_API_KEY not set in environment")
         if api_key == "your-api-key-here":
             raise ValueError("OPENAI_API_KEY is placeholder value (your-api-key-here)")
+        validate_api_key_format("OPENAI_API_KEY")
         print(f"    ✓ API key present and not placeholder")
 
         # Try to create LM object
@@ -316,6 +389,7 @@ def test_anthropic_config(verbose: bool = False) -> Dict:
             raise ValueError("ANTHROPIC_API_KEY not set in environment")
         if api_key == "your-api-key-here":
             raise ValueError("ANTHROPIC_API_KEY is placeholder value (your-api-key-here)")
+        validate_api_key_format("ANTHROPIC_API_KEY")
         print(f"    ✓ API key present and not placeholder")
 
         # Try to create LM object
@@ -400,6 +474,7 @@ def test_gemini_config(verbose: bool = False) -> Dict:
             raise ValueError("GEMINI_API_KEY not set in environment")
         if api_key == "your-api-key-here":
             raise ValueError("GEMINI_API_KEY is placeholder value (your-api-key-here)")
+        validate_api_key_format("GEMINI_API_KEY")
         print(f"    ✓ API key present and not placeholder")
 
         # Try to create LM object
@@ -464,6 +539,10 @@ def test_gemini_config(verbose: bool = False) -> Dict:
 def run_all_provider_tests(specific_provider: str = None, verbose: bool = False) -> List[Dict]:
     """Run all provider configuration tests."""
     print_section("LLM Configuration Test Suite")
+    if DOTENV_VALUES:
+        print(f"Loaded {len(DOTENV_VALUES)} entries from {DOTENV_PATH}")
+    else:
+        print(f"  ⚠️  {DOTENV_PATH} not found or empty; relying on shell environment variables")
     print(f"Testing all LLM providers with detailed debugging output\n")
 
     results = []

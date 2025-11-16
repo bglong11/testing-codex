@@ -6,9 +6,16 @@ if (-not (Test-Path $venvPath)) {
     Write-Error "Virtual environment not found at $venvPath"
     return
 }
-$activateScript = Join-Path $venvPath 'Scripts\Activate.ps1'
-if (-not (Test-Path $activateScript)) {
-    Write-Error "Activation script missing: $activateScript"
+
+$candidateScripts = @(
+    "$venvPath\Scripts\Activate.ps1",
+    "$venvPath\bin\Activate.ps1"
+)
+
+$activateScript = $candidateScripts | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $activateScript) {
+    Write-Error "Activation script missing (expected Scripts\\Activate.ps1 or bin/Activate.ps1)"
     return
 }
+
 . $activateScript

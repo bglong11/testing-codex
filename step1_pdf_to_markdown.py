@@ -8,6 +8,7 @@ Usage:
     python step1_pdf_to_markdown.py <input.pdf>
     python step1_pdf_to_markdown.py saas/backend/your_test.pdf
     python step1_pdf_to_markdown.py input.pdf --provider openai
+    python step1_pdf_to_markdown.py input.pdf --output-dir pipeline_runs/my_esia_project
 """
 
 import sys
@@ -65,6 +66,12 @@ def parse_arguments():
         type=str,
         choices=list(SUPPORTED_PROVIDERS),
         help="Optional LLM provider label for this step (default is read from LLM_PROVIDER or ollama).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("markdown_outputs"),
+        help="Directory to write converted markdown (default: markdown_outputs/).",
     )
 
     return parser.parse_args()
@@ -150,8 +157,9 @@ def main():
 
     print_step(2, "DOCLING PDF TO MARKDOWN CONVERSION")
 
+    output_dir = args.output_dir
     try:
-        markdown_path, markdown_text = convert_pdf_to_markdown(pdf_path)
+        markdown_path, markdown_text = convert_pdf_to_markdown(pdf_path, markdown_dir=output_dir)
         doc_byte_size = len(markdown_text.encode('utf-8'))
         doc_lines = len(markdown_text.split('\n'))
 
