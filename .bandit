@@ -1,0 +1,15 @@
+# Bandit security configuration for ESIA Pipeline
+
+[bandit]
+exclude_dirs = ['/tests', '/test', '/.venv', '/venv', '/env']
+tests = []
+skips = []
+
+# Exclude test directories from security scanning
+exclude = /tests,/test
+
+# Set the confidence level
+confidence_level = MEDIUM
+
+# Set the severity level
+severity_level = LOW

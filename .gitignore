@@ -20,3 +20,19 @@ ENV/
 output/
 markdown_outputs/
 pipeline_runs/
+
+# Test and coverage reports
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+
+# CI/CD artifacts
+bandit-report.json
+*.log
+
+# Pre-commit
+.pre-commit-config.yaml.swp
