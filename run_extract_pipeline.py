@@ -7,7 +7,8 @@ Convenience wrapper that executes Step 1 → Step 2 → Step 3 of the ESIA pipel
 Only a source PDF is required; all derived directories and filenames are based on the PDF name
 and a shared timestamp so the generated markdown, CSVs, and verification report stay grouped.
 
-Step 2 is always invoked with `--provider openai` and Step 3 with `--provider gemini`.
+By default Step 2/3 inherit the LLM configuration found in `.env` (and overrides such as
+`LLM_PROVIDER_STEP2`). Use `--step2-provider`/`--step3-provider` to override when needed.
 """
 
 from __future__ import annotations
@@ -65,6 +66,18 @@ def parse_arguments() -> argparse.Namespace:
         default=Path("pipeline_runs"),
         help="Root directory where the pipeline folders will be created.",
     )
+    parser.add_argument(
+        "--step2-provider",
+        type=str,
+        choices=["openai", "ollama", "anthropic", "gemini"],
+        help="Override the provider used for Step 2 (fact extraction).",
+    )
+    parser.add_argument(
+        "--step3-provider",
+        type=str,
+        choices=["openai", "ollama", "anthropic", "gemini"],
+        help="Override the provider used for Step 3 (fact analysis).",
+    )
     return parser.parse_args()
 
 
@@ -108,9 +121,9 @@ def main() -> None:
         "step2_extract_facts.py",
         "--pipeline-root",
         str(pipeline_root),
-        "--provider",
-        "openai",
     ]
+    if args.step2_provider:
+        step2_cmd.extend(["--provider", args.step2_provider])
 
     try:
         run_command(step2_cmd, "Step 2 (Fact Extraction)")
@@ -124,9 +137,9 @@ def main() -> None:
         str(step2_output),
         "--pipeline-root",
         str(pipeline_root),
-        "--provider",
-        "gemini",
     ]
+    if args.step3_provider:
+        step3_cmd.extend(["--provider", args.step3_provider])
 
     try:
         run_command(step3_cmd, "Step 3 (Fact Analysis)")

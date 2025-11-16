@@ -11,6 +11,7 @@ import sys
 import io
 import json
 import re
+import os
 import pandas as pd
 from typing import List, Dict, Any, Optional, Literal
 from pathlib import Path
@@ -32,6 +33,43 @@ except ImportError:
     TQDM_AVAILABLE = False
     print("Note: Install 'tqdm' for progress bar: pip install tqdm")
 
+def _load_llm_env():
+    """Load `.env` if present so environment values are available to LLM helpers."""
+    env_file = Path(__file__).parent / ".env"
+    if env_file.exists():
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(env_file, verbose=False, override=False)
+        except ImportError:
+            pass
+
+
+def peek_llm_configuration():
+    """Return the provider/model that will be used for the next LLM configuration."""
+    _load_llm_env()
+    provider = os.getenv("LLM_PROVIDER", "ollama").lower()
+    if provider == "ollama":
+        model = os.getenv("OLLAMA_MODEL", "mistral:latest")
+    elif provider == "openai":
+        model = os.getenv("OPENAI_MODEL", "gpt-4")
+    elif provider == "anthropic":
+        model = os.getenv("ANTHROPIC_MODEL", "claude-3-sonnet-20240229")
+    elif provider == "gemini":
+        model = os.getenv("GEMINI_MODEL", "gemini-pro")
+    else:
+        model = None
+    return provider, model
+
+
+LLM_PROVIDER_DISPLAY_NAMES = {
+    "ollama": "Ollama",
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "gemini": "Gemini",
+}
+
+
 # ============================================================================
 # DSPy Configuration
 # ============================================================================
@@ -49,21 +87,7 @@ def configure_llm():
     Configuration via .env file or environment variables.
     Default: ollama with mistral:latest
     """
-    import os
-    from pathlib import Path
-
-    # Try to load .env file if it exists
-    env_file = Path(__file__).parent / ".env"
-    if env_file.exists():
-        from dotenv import load_dotenv
-        try:
-            # Use override=False to allow environment variables set by parent process to take precedence
-            # This allows step2_extract_facts.py to override LLM_PROVIDER via --provider flag
-            # .env values are used only if environment variables are not already set
-            load_dotenv(env_file, verbose=False, override=False)
-        except ImportError:
-            # dotenv not installed, continue with os.getenv
-            pass
+    _load_llm_env()
 
     # Determine which provider to use
     provider = os.getenv("LLM_PROVIDER", "ollama").lower()
@@ -1154,7 +1178,10 @@ def process_esia_document(markdown_path: str, output_dir: str = ".", resume: boo
                 print("         Starting fresh extraction...")
 
     # Configure LLM
-    print("\n[1/7] Configuring Qwen2.5:7B-Instruct via Ollama...")
+    provider, model = peek_llm_configuration()
+    provider_label = LLM_PROVIDER_DISPLAY_NAMES.get(provider, provider.title())
+    description = f"{model} via {provider_label}" if model else provider_label
+    print(f"\n[1/7] Configuring {description} for better error tracking...")
     configure_llm()
 
     # Load markdown

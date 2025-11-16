@@ -4,6 +4,16 @@ from __future__ import annotations
 
 from typing import Dict, Literal
 import os
+from pathlib import Path
+
+try:
+    from dotenv import load_dotenv
+
+    _LLM_ENV_PATH = Path(__file__).parent / ".env"
+    if _LLM_ENV_PATH.exists():
+        load_dotenv(dotenv_path=_LLM_ENV_PATH, override=False)
+except ImportError:
+    pass
 
 SUPPORTED_PROVIDERS = ("ollama", "openai", "anthropic", "gemini")
 
