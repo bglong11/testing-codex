@@ -5,7 +5,7 @@
 docling>=1.0.0
 
 # LLM Framework
-dspy-ai>=2.4.0
+dspy>=2.4.0
 
 # Data Processing
 pandas>=2.0.0
